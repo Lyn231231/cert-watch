@@ -1,0 +1,7 @@
+{
+  "targets": [
+    {"name": "letsencrypt-live", "path": "/etc/letsencrypt/live/example.com/fullchain.pem"},
+    {"name": "local-https", "host": "127.0.0.1", "port": 8443},
+    {"name": "smtp", "host": "mail.example.com", "port": 465, "sni": "mail.example.com"}
+  ]
+}
