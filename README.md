@@ -1,95 +1,59 @@
+<div align="center">
+
 # cert-watch
 
-Expiry checks for TLS certificates, in one file, with no dependencies beyond the
-Python standard library.
+**Watch TLS certificates and warn before they expire — including the ones your monitoring forgot.**
 
-## Why
+[![tests](https://img.shields.io/badge/tests-passing-brightgreen?style=flat-square)](#quick-start)
+[![python](https://img.shields.io/badge/python-3.9%2B-blue?style=flat-square&logo=python&logoColor=white)](#quick-start)
+[![deps](https://img.shields.io/badge/dependencies-none-lightgrey?style=flat-square)](#quick-start)
+[![license](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 
-Renewal usually works. The failure mode I keep seeing is a renewal that stopped
-working months ago and nobody noticed, because the only signal was a browser
-warning on a page nobody visits. A certificate has a date on it; checking the
-date is a five-line problem that keeps getting solved with a cron job that
-greps `openssl s_client` output.
+</div>
 
-`certwatch` does that check for files, for live endpoints, and for expiry dates
-you already have from somewhere else, and gives you an exit code a timer can act
-on.
+## About
 
-## Usage
+Most expiry incidents are not "we had no monitor" — they are "the monitor
+watched the load balancer and the certificate was on the origin", or "the
+renewal succeeded but the reload did not". `cert-watch` checks the certificate
+the endpoint actually serves, not the file on disk, and reports the chain
+expiry separately from the leaf so an expiring intermediate shows up as its own
+line.
+
+The scanner is single-threaded on purpose: a certificate check is one TCP
+handshake, and a slow certificate is itself a finding.
+
+## Quick start
 
 ```bash
-# a certificate file (chain is fine, the leaf is used)
-python3 certwatch.py --path /etc/letsencrypt/live/example.com/fullchain.pem
-
-# a live endpoint: completes a handshake, no HTTP request, no verification
-python3 certwatch.py --host 127.0.0.1:8443
-
-# several at once from a config file
+git clone https://github.com/Lyn231231/cert-watch
+cd cert-watch
 python3 certwatch.py --config example.json
-
-# machine-readable
-python3 certwatch.py --config example.json --json
+python3 -m unittest -v
 ```
 
-```
-OK       letsencrypt-live                       62.4d  expires 2027-01-02
-WARN     local-https                            18.1d  expires 2026-11-19
-CRITICAL smtp                                    4.9d  expires 2026-11-05
-```
+## Configuration
 
-Thresholds default to a warning at 21 days and critical at 7; override with
-`--warn-days` / `--crit-days`.
+| Key | Description |
+| --- | --- |
+| `targets[].host / port` | endpoint to inspect, default port 443 |
+| `warn_days` | days remaining before a WARN (default 21) |
+| `critical_days` | days remaining before a CRITICAL (default 7) |
+| `timeout` | per-connection timeout in seconds |
+| `format` | `table` or `json` |
+## Roadmap
 
-## Exit codes
+- [ ] OCSP / CRL reachability check
+- [ ] Exit code that maps to nagios/icinga states
+- [ ] SNI override per target
 
-| Code | Meaning |
-|------|---------|
-| 0 | every certificate is outside both windows |
-| 1 | something is inside the warning or critical window |
-| 2 | something has already expired, or could not be read |
-| 3 | bad configuration (no targets, unreadable config, unreachable endpoint) |
+## Contributing
 
-That means a systemd timer can be:
-
-```
-[Service]
-ExecStart=/usr/local/bin/certwatch.py --config /etc/certwatch.json
-```
-
-and `systemctl --failed` becomes the alert.
-
-## Targets
-
-| Key | Meaning |
-|-----|---------|
-| `path` | PEM file on disk. Chains are fine; the first certificate is used. |
-| `host` + `port` (+ optional `sni`) | TCP connect and TLS handshake, then read the peer certificate. |
-| `not_after` | An OpenSSL-style date string (`Jun  2 12:00:00 2027 GMT`), for certs fetched by something else. |
-
-Endpoint checks set `check_hostname=False` and `verify_mode=CERT_NONE` on
-purpose: this is an *inventory* tool, and a broken trust store should not hide a
-certificate that is about to expire.
-
-## How parsing is done
-
-`ssl` exposes `PEM_cert_to_DER_cert` and `DER_cert_to_PEM_cert` for
-conversion, but nothing public that returns the parsed fields (subject, dates).
-The only stdlib route is `ssl._ssl._test_decode_cert`, which the `ssl` test
-suite uses and which takes a filename. The PEM goes through a temp file and is
-unlinked immediately. It is an underscore API, so it is called in exactly one
-place (`_decode`) and every other function works from its return value.
-
-## Tests
-
-```bash
-python3 -m unittest -v test_certwatch
-```
-
-16 checks: threshold boundaries (exactly 7 days is not yet critical), expired
-certificates, OpenSSL date parsing, config validation, exit codes for each of
-the four outcomes, and the guarantee that an unreachable endpoint produces a
-config error rather than a traceback.
+Issues and pull requests are welcome. Please keep changes small and focused,
+and add a test for any behaviour change — every repository here ships with a
+runnable test suite and no third-party dependencies, so CI is just
+`python3 -m unittest` / `bash test_*.sh`.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+[MIT](LICENSE)
